@@ -17,20 +17,23 @@ dependencies = [
 [[package]]
 name = "aidoku"
 version = "0.3.0"
-source = "git+https://github.com/Aidoku/aidoku-rs.git#9854e5e8fd913d51d570b7c61a5a7e4e32364194"
+source = "git+https://github.com/Aidoku/aidoku-rs.git#db934c1d181d04048258dbcb90f872dfcc7e1919"
 dependencies = [
  "euclid",
  "hashbrown",
+ "itoa",
  "num-traits",
+ "paste",
  "postcard",
  "serde",
  "talc",
+ "thiserror",
 ]
 
 [[package]]
 name = "aidoku-test"
 version = "1.0.0"
-source = "git+https://github.com/Aidoku/aidoku-rs.git#9854e5e8fd913d51d570b7c61a5a7e4e32364194"
+source = "git+https://github.com/Aidoku/aidoku-rs.git#db934c1d181d04048258dbcb90f872dfcc7e1919"
 dependencies = [
  "quote",
  "syn",
@@ -68,6 +71,15 @@ name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+
+[[package]]
+name = "chrono"
+version = "0.4.41"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "cobs"
@@ -140,6 +152,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
+
+[[package]]
 name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -161,6 +179,7 @@ version = "0.1.0"
 dependencies = [
  "aidoku",
  "aidoku-test",
+ "chrono",
 ]
 
 [[package]]
@@ -178,6 +197,12 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "postcard"
