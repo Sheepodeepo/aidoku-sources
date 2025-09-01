@@ -10,6 +10,8 @@ use aidoku::{
 mod auth;
 mod cdn;
 mod chapters;
+mod context;
+mod converters;
 mod endpoints;
 mod filters;
 mod home;

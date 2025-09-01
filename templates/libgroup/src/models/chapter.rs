@@ -5,8 +5,15 @@ use aidoku::{
 };
 use chrono::DateTime;
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 
-use crate::{cdn::get_selected_image_server_url, endpoints::Url, models::common::Moderated};
+use crate::{
+	cdn::get_selected_image_server_url,
+	context::Context,
+	converters::{convert_html_to_markdown, convert_model_to_markdown},
+	endpoints::Url,
+	models::common::LibGroupModerated,
+};
 
 use super::common::{LibGroupRestrictedView, LibGroupTeam};
 
@@ -17,29 +24,29 @@ pub struct LibGroupChapterBranch {
 	pub branch_id: Option<i32>,
 	pub created_at: String,
 	pub teams: Vec<LibGroupTeam>,
-	pub user: ChapterBranchUser,
+	pub user: LibGroupChapterBranchUser,
 	pub restricted_view: Option<LibGroupRestrictedView>,
-	pub moderation: Option<Moderated>,
+	pub moderation: Option<LibGroupModerated>,
 }
 
 #[derive(Default, Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct ChapterBranchUser {
+pub struct LibGroupChapterBranchUser {
 	pub username: String,
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
-enum BranchesFormat {
+enum LibGroupBranchesFormat {
 	Array(Vec<LibGroupChapterBranch>),
 	Object(HashMap<String, LibGroupChapterBranch>),
 }
 
-impl BranchesFormat {
+impl LibGroupBranchesFormat {
 	fn into_vec(self) -> Vec<LibGroupChapterBranch> {
 		match self {
-			BranchesFormat::Array(vec) => vec,
-			BranchesFormat::Object(map) => map.into_values().collect(),
+			LibGroupBranchesFormat::Array(vec) => vec,
+			LibGroupBranchesFormat::Object(map) => map.into_values().collect(),
 		}
 	}
 }
@@ -48,7 +55,7 @@ fn deserialize_branches<'de, D>(deserializer: D) -> Result<Vec<LibGroupChapterBr
 where
 	D: Deserializer<'de>,
 {
-	BranchesFormat::deserialize(deserializer).map(|format| format.into_vec())
+	LibGroupBranchesFormat::deserialize(deserializer).map(|format| format.into_vec())
 }
 
 #[derive(Default, Deserialize, Debug, Clone)]
@@ -67,14 +74,112 @@ pub struct LibGroupPage {
 	pub url: String,
 }
 
-#[derive(Default, Deserialize, Debug, Clone)]
-#[serde(default)]
-pub struct LibGroupChapter {
+#[derive(Deserialize, Debug, Clone)]
+pub struct LibGroupImageChapter {
 	pub pages: Vec<LibGroupPage>,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct LibGroupTextChapter {
+	pub content: LibGroupContentType,
+	pub attachments: Vec<LibGroupAttachment>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LibGroupContentType {
+	Html(String),
+	Model(LibGroupContentModel),
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupContentModel {
+	pub content: Option<Vec<LibGroupContentNode>>,
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupContentNode {
+	#[serde(rename = "type")]
+	pub node_type: String,
+	pub content: Option<Vec<LibGroupTextNode>>,
+	pub attrs: Option<LibGroupNodeAttrs>,
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupTextNode {
+	pub text: Option<String>,
+	pub marks: Option<Vec<LibGroupMark>>,
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupMark {
+	#[serde(rename = "type")]
+	pub mark_type: String,
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupNodeAttrs {
+	pub images: Option<Vec<LibGroupImageAttr>>,
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupImageAttr {
+	pub image: String,
+}
+
+#[derive(Default, Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct LibGroupAttachment {
+	pub url: String,
+	pub name: Option<String>,
+	pub filename: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum LibGroupChapterData {
+	// Image chapter has "pages" field
+	Image(LibGroupImageChapter),
+	// Text chapter has "content" field (and other text-specific fields)
+	Text(LibGroupTextChapter),
+}
+
+impl Default for LibGroupContentType {
+	fn default() -> Self {
+		LibGroupContentType::Html(String::new())
+	}
+}
+
+impl<'de> Deserialize<'de> for LibGroupContentType {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		let value = Value::deserialize(deserializer)?;
+		match value {
+			Value::String(s) => Ok(LibGroupContentType::Html(s)),
+			Value::Object(_) => {
+				let model: LibGroupContentModel =
+					serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+				Ok(LibGroupContentType::Model(model))
+			}
+			_ => Err(serde::de::Error::custom("Invalid content type")),
+		}
+	}
+}
+
 impl LibGroupChapterListItem {
-	pub fn into_chapters(self, base_url: &str, slug_url: &str) -> Vec<Chapter> {
+	pub fn into_chapters(
+		self,
+		base_url: &str,
+		slug_url: &str,
+		user_id: &Option<i32>,
+	) -> Vec<Chapter> {
 		self.branches
 			.into_iter()
 			.map(|branch| {
@@ -113,6 +218,7 @@ impl LibGroupChapterListItem {
 						volume_number,
 						chapter_number,
 						branch.branch_id,
+						user_id,
 					)),
 					locked,
 					..Default::default()
@@ -121,27 +227,57 @@ impl LibGroupChapterListItem {
 			.collect()
 	}
 
-	pub fn flatten_chapters(items: Vec<Self>, base_url: &str, slug_url: &str) -> Vec<Chapter> {
+	pub fn flatten_chapters(
+		items: Vec<Self>,
+		base_url: &str,
+		slug_url: &str,
+		user_id: &Option<i32>,
+	) -> Vec<Chapter> {
 		items
 			.into_iter()
 			.rev()
-			.flat_map(|item| item.into_chapters(base_url, slug_url))
+			.flat_map(|item| item.into_chapters(base_url, slug_url, user_id))
 			.collect()
 	}
 }
 
-impl LibGroupChapter {
-	pub fn into_pages(self, site_id: &u8) -> Vec<Page> {
+impl LibGroupChapterData {
+	pub fn into_pages(self, ctx: &Context) -> Vec<Page> {
+		match self {
+			LibGroupChapterData::Image(chapter) => chapter.into_pages(ctx),
+			LibGroupChapterData::Text(chapter) => chapter.into_pages(ctx),
+		}
+	}
+}
+
+impl LibGroupImageChapter {
+	pub fn into_pages(self, ctx: &Context) -> Vec<Page> {
 		self.pages
 			.into_iter()
 			.map(|page| Page {
 				content: PageContent::url(format!(
 					"{}{}",
-					get_selected_image_server_url(site_id),
+					get_selected_image_server_url(ctx),
 					page.url
 				)),
 				..Default::default()
 			})
 			.collect()
+	}
+}
+
+impl LibGroupTextChapter {
+	pub fn into_pages(self, ctx: &Context) -> Vec<Page> {
+		let markdown = match self.content {
+			LibGroupContentType::Html(html) => convert_html_to_markdown(&html),
+			LibGroupContentType::Model(model) => {
+				convert_model_to_markdown(&model, &self.attachments, ctx)
+			}
+		};
+
+		vec![Page {
+			content: PageContent::text(markdown),
+			..Default::default()
+		}]
 	}
 }
